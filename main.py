@@ -1,20 +1,16 @@
 #!/usr/bin/env python3
 """
-Простой консольный чат с ИИ
+Простой TUI чат с ИИ на базе curses
 """
 
 import anthropic
+import curses
 import os
 import sys
 
-from anthropic.types import MessageParam
 from dotenv import load_dotenv
-
-# Константы для API
-MODEL = "claude-3-7-sonnet-latest"
-MAX_TOKENS = 1000
-TEMPERATURE = 0.7
-SYSTEM_PROMPT = "Отвечай как будто ты быдло"
+from chat_tui import ChatTUI
+from config import MODEL, MAX_TOKENS, TEMPERATURE, SYSTEM_PROMPT
 
 
 def main():
@@ -27,31 +23,12 @@ def main():
         sys.exit(1)
     
     client = anthropic.Anthropic()
-    conversation = []
-
-    print("Это чат с ИИ. Когда надоест, введи q")
-    while True:
-        user_prompt = input("> ")
-
-        if user_prompt == "q":
-            break
-
-        conversation.append(MessageParam(role="user", content=user_prompt))
-
-        if user_prompt:
-            try:
-                message = client.messages.create(
-                    model=MODEL,
-                    max_tokens=MAX_TOKENS,
-                    temperature=TEMPERATURE,
-                    system=SYSTEM_PROMPT,
-                    messages=conversation,
-                )
-                response = message.content[0].text
-                conversation.append(MessageParam(role="assistant", content=response))
-                print(response)
-            except Exception as e:
-                print(e)
+    chat = ChatTUI(client, MODEL, MAX_TOKENS, TEMPERATURE, SYSTEM_PROMPT)
+    
+    try:
+        curses.wrapper(chat.run)
+    except KeyboardInterrupt:
+        pass
 
 if __name__ == "__main__":
     main()
