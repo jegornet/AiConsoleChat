@@ -1,0 +1,36 @@
+# Игнорировать виртуальное окружение
+.venv/
+venv/
+
+# Файлы/папки кэша Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Логи
+*.log
+
+# Конфигурации IDE (например, PyCharm)
+.idea/
+.vscode/
+
+# Файлы окружения и временные файлы
+.env
+*.env
+.DS_Store
+Thumbs.db
+
+# Тестовые и кэш-файлы
+.coverage
+htmlcov/
+.tox/
+.cache/
+.pytest_cache/
+
+# mypy, pylint и другие
+.mypy_cache/
+.pylint.d/
+
+# database
+auth.db
