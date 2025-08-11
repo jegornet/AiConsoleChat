@@ -25,7 +25,7 @@ def main():
     client = anthropic.Anthropic()
     conversation = []
 
-    print("Это чат с ИИ. Когда надоест, введи q")
+    print("Введи список городов через запятую или q для выхода")
     while True:
         user_prompt = input("> ")
 
