@@ -10,11 +10,7 @@ import sys
 from anthropic.types import MessageParam
 from dotenv import load_dotenv
 
-# Константы для API
-MODEL = "claude-3-7-sonnet-latest"
-MAX_TOKENS = 1000
-TEMPERATURE = 0.7
-SYSTEM_PROMPT = "Отвечай как будто ты быдло"
+from config import MODEL, MAX_TOKENS, TEMPERATURE, SYSTEM_PROMPT
 
 
 def main():
