@@ -6,10 +6,12 @@ TUI интерфейс для чата с ИИ на базе curses
 import curses
 import textwrap
 import threading
-import time
 import locale
+import json
 
 from anthropic.types import MessageParam
+
+import config
 
 
 class ChatTUI:
@@ -24,10 +26,17 @@ class ChatTUI:
         self.current_input = ""
         self.scroll_offset = 0
         self.waiting_for_response = False
-        
+
     def wrap_text(self, text, width):
-        """Переносит текст по словам"""
-        return textwrap.fill(text, width=width)
+        """Переносит текст по словам, сохраняя переносы строк"""
+        lines = text.split('\n')
+        wrapped_lines = []
+        for line in lines:
+            if line.strip():  # Не пустая строка
+                wrapped_lines.extend(textwrap.wrap(line, width=width))
+            else:  # Пустая строка
+                wrapped_lines.append('')
+        return wrapped_lines
         
     def add_message(self, role, content):
         """Добавляет сообщение в чат"""
@@ -67,17 +76,16 @@ class ChatTUI:
                 break
                 
             role_prefix = "Вы: " if msg["role"] == "user" else ("ИИ: " if msg["role"] == "assistant" else "Система: ")
-            wrapped_content = self.wrap_text(msg["content"], width - len(role_prefix) - 2)
+            wrapped_lines = self.wrap_text(msg["content"], width - len(role_prefix) - 2)
             
             # Первая строка с префиксом
-            lines = wrapped_content.split('\n')
-            if lines:
+            if wrapped_lines:
                 try:
-                    stdscr.addstr(y, 0, role_prefix + lines[0][:width-1])
+                    stdscr.addstr(y, 0, role_prefix + wrapped_lines[0][:width-1])
                     y += 1
                     
                     # Остальные строки с отступом
-                    for line in lines[1:]:
+                    for line in wrapped_lines[1:]:
                         if y >= chat_height - 1:
                             break
                         stdscr.addstr(y, len(role_prefix), line[:width-len(role_prefix)-1])
@@ -113,6 +121,9 @@ class ChatTUI:
         # Настройка для UTF-8
         locale.setlocale(locale.LC_ALL, '')
 
+        # Приветствие
+        self.add_message("assistant", config.GREETING)
+
         while True:
             height, width = stdscr.getmaxyx()
             chat_height = height - 4  # Оставляем место для ввода
@@ -131,7 +142,7 @@ class ChatTUI:
                 pass
                 
             stdscr.refresh()
-            
+
             # Обработка ввода
             try:
                 key = stdscr.get_wch()
@@ -158,5 +169,3 @@ class ChatTUI:
             elif isinstance(key, str) and key.isprintable():
                 # Обычные печатные символы (включая кириллицу)
                 self.current_input += key
-                
-            time.sleep(0.05)  # Небольшая задержка
