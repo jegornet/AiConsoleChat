@@ -12,6 +12,7 @@ import json
 from anthropic.types import MessageParam
 
 import config
+from supervisor import SupervisorAgent
 
 
 class ChatTUI:
@@ -26,6 +27,10 @@ class ChatTUI:
         self.current_input = ""
         self.scroll_offset = 0
         self.waiting_for_response = False
+        # Инициализируем супервайзера
+        self.supervisor = SupervisorAgent(
+            client, model, max_tokens, temperature, config.SYSTEM_PROMPT_SUPERVISOR
+        )
 
     def wrap_text(self, text, width):
         """Переносит текст по словам, сохраняя переносы строк"""
@@ -56,10 +61,31 @@ class ChatTUI:
             )
             response = message.content[0].text
             self.add_message("assistant", response)
+            
+            # Проверяем, нужно ли оценить ответ супервайзером
+            if self.supervisor.should_evaluate(response):
+                self.evaluate_with_supervisor(response)
+                
         except Exception as e:
             self.add_message("system", f"Ошибка: {str(e)}")
         finally:
             self.waiting_for_response = False
+            
+    def evaluate_with_supervisor(self, response):
+        """Оценивает ответ супервайзером в отдельном потоке"""
+        def run_evaluation():
+            try:
+                evaluation = self.supervisor.evaluate_recommendations(response)
+                if evaluation:
+                    score = self.supervisor.parse_evaluation_score(evaluation)
+                    if score is not None:
+                        score_indicator = f"⭐ Оценка: {score}/10"
+                        evaluation = f"{score_indicator}\n\n{evaluation}"
+                    self.add_message("supervisor", evaluation)
+            except Exception as e:
+                self.add_message("system", f"Ошибка супервайзера: {str(e)}")
+        
+        threading.Thread(target=run_evaluation, daemon=True).start()
             
     def draw_chat(self, stdscr, chat_height, width):
         """Рисует область чата"""
@@ -75,7 +101,14 @@ class ChatTUI:
             if y >= chat_height - 1:
                 break
                 
-            role_prefix = "Вы: " if msg["role"] == "user" else ("ИИ: " if msg["role"] == "assistant" else "Система: ")
+            if msg["role"] == "user":
+                role_prefix = "Вы: "
+            elif msg["role"] == "assistant":
+                role_prefix = "ИИ: "
+            elif msg["role"] == "supervisor":
+                role_prefix = "🔍 Супервайзер: "
+            else:
+                role_prefix = "Система: "
             wrapped_lines = self.wrap_text(msg["content"], width - len(role_prefix) - 2)
             
             # Первая строка с префиксом

@@ -10,7 +10,7 @@ import sys
 
 from dotenv import load_dotenv
 from chat_tui import ChatTUI
-from config import MODEL, MAX_TOKENS, TEMPERATURE, SYSTEM_PROMPT
+from config import MODEL, MAX_TOKENS, TEMPERATURE, SYSTEM_PROMPT_AGENT
 
 
 def main():
@@ -23,7 +23,7 @@ def main():
         sys.exit(1)
     
     client = anthropic.Anthropic()
-    chat = ChatTUI(client, MODEL, MAX_TOKENS, TEMPERATURE, SYSTEM_PROMPT)
+    chat = ChatTUI(client, MODEL, MAX_TOKENS, TEMPERATURE, SYSTEM_PROMPT_AGENT)
     
     try:
         curses.wrapper(chat.run)
