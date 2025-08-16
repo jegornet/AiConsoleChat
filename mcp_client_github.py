@@ -35,6 +35,7 @@ async def get_my_repos_with_commits(token: str):
 
             for repo in repos:
                 repo_name = repo["name"]
+                repo_description = repo.get("description", "")
                 try:
                     # Получаем коммиты для каждого репозитория
                     commits_result = await session.call_tool(
@@ -43,9 +44,9 @@ async def get_my_repos_with_commits(token: str):
                     )
                     commits_data = json.loads(commits_result.content[0].text)
                     commit_count = len(commits_data)
-                    repo_commits.append((repo_name, commit_count))
+                    repo_commits.append((repo_name, commit_count, repo_description))
                 except Exception:
                     # Если не удалось получить коммиты (приватный репо, ошибка и т.д.)
-                    repo_commits.append((repo_name, 0))
+                    repo_commits.append((repo_name, 0, repo_description))
 
             return repo_commits

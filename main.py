@@ -42,32 +42,42 @@ def main():
 
         if user_prompt:
             try:
-                message = client.messages.create(
-                    model=MODEL,
-                    max_tokens=MAX_TOKENS,
-                    temperature=TEMPERATURE,
-                    system=SYSTEM_PROMPT,
-                    messages=conversation,
-                )
-                response = message.content[0].text
+                response = send_message(client, conversation)
                 conversation.append(MessageParam(role="assistant", content=response))
                 print(response)
                 if "---STATS" in response:
-                    show_github_stats()
+                    stats = get_github_stats()
+                    stats_prompt = "Перескажи этот отчёт в удобном виде: " + stats
+                    conversation.append(MessageParam(role="user", content=stats_prompt))
+                    stats_response = send_message(client, conversation)
+                    conversation.append(MessageParam(role="assistant", content=stats_response))
+                    print(stats_response)
             except Exception as e:
                 print(e)
 
+def send_message(client, conversation):
+    message = client.messages.create(
+        model=MODEL,
+        max_tokens=MAX_TOKENS,
+        temperature=TEMPERATURE,
+        system=SYSTEM_PROMPT,
+        messages=conversation,
+    )
+    response = message.content[0].text
+    return response
 
-def show_github_stats():
+def get_github_stats():
     token = os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN")
     repo_commits = asyncio.run(get_my_repos_with_commits(token))
     total_repos = 0
     total_commits = 0
-    for repo_name, commit_count in repo_commits:
+    summary = ""
+    for repo_name, commit_count, repo_description in repo_commits:
         total_repos += 1
         total_commits += commit_count
-        print(f"{repo_name}: {commit_count} commit(s)")
-    print(f"{total_commits} in {total_repos} repo(s)")
+        summary += f"Repo {repo_name} ({repo_description}) has {commit_count} commits\n"
+    summary += f"Total {total_commits} commits in {total_repos} repos"
+    return summary
 
 if __name__ == "__main__":
     main()
