@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-import asyncio
-import os
 import json
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -8,9 +6,9 @@ from mcp.client.stdio import stdio_client
 
 async def get_my_repos_with_commits(token: str):
     server_params = StdioServerParameters(
-        command="docker",
-        args=["run", "-i", "--rm", "-e", f"GITHUB_PERSONAL_ACCESS_TOKEN={token}",
-              "ghcr.io/github/github-mcp-server"]
+        command="sh",
+        args=["-c",
+              f"docker run -i --rm -e GITHUB_PERSONAL_ACCESS_TOKEN={token} ghcr.io/github/github-mcp-server 2>/dev/null"]
     )
 
     async with stdio_client(server_params) as (read, write):
