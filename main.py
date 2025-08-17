@@ -65,6 +65,7 @@ def convert_mcp_to_anthropic_tools(tools_schema):
 async def main():
     parser = argparse.ArgumentParser(description="Консольный чат с ИИ")
     parser.add_argument("-p", "--prompt", type=str, help="Первый промпт для отправки")
+    parser.add_argument("-d", "--debug", action="store_true", help="Включить отладочный вывод")
     args = parser.parse_args()
 
     load_dotenv()
@@ -78,20 +79,22 @@ async def main():
         sys.exit(1)
 
     # Создаём MCP клиент с отладкой
-    mcp_client = GitHubMCPClient(os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN"), debug=True)
+    mcp_client = GitHubMCPClient(os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN"), debug=args.debug)
 
     # Получаем схему инструментов от MCP сервера
-    print("Получаем список доступных инструментов...")
+    if args.debug:
+        print("Получаем список доступных инструментов...")
     try:
         tools_schema = await mcp_client.get_tools_schema()
 
         # Конвертируем в формат Anthropic Function Calling
         anthropic_tools = convert_mcp_to_anthropic_tools(tools_schema)
 
-        print(f"Обнаружено {len(tools_schema)} инструментов:")
-        for tool_name in tools_schema:
-            print(f"  - {tool_name}")
-        print()
+        if args.debug:
+            print(f"Обнаружено {len(tools_schema)} инструментов:")
+            for tool_name in tools_schema:
+                print(f"  - {tool_name}")
+            print()
 
     except Exception as e:
         print_detailed_error("Не удалось получить список инструментов", e)
@@ -148,8 +151,8 @@ async def process_user_prompt(user_prompt, client, mcp_client, conversation, too
 
             # Проверяем, хочет ли модель вызвать инструмент
             if message.stop_reason == "tool_use":
-                # Модель хочет использовать инструмент
-                tool_use = None
+                # Модель хочет использовать инструменты
+                tool_uses = []
                 text_content = ""
 
                 for content_block in message.content:
@@ -157,37 +160,45 @@ async def process_user_prompt(user_prompt, client, mcp_client, conversation, too
                         if content_block.type == "text":
                             text_content += content_block.text
                         elif content_block.type == "tool_use":
-                            tool_use = content_block
+                            tool_uses.append(content_block)
 
-                if tool_use:
+                if tool_uses:
                     # Добавляем ответ модели в беседу
                     conversation.append(MessageParam(role="assistant", content=message.content))
 
-                    # Вызываем инструмент через MCP
-                    try:
-                        tool_result = await mcp_client.call_tool(
-                            tool_use.name,
-                            tool_use.input
-                        )
+                    # Вызываем все инструменты и собираем результаты
+                    tool_results = []
+                    
+                    for tool_use in tool_uses:
+                        try:
+                            tool_result = await mcp_client.call_tool(
+                                tool_use.name,
+                                tool_use.input
+                            )
 
-                        # Добавляем результат инструмента в беседу
-                        conversation.append(MessageParam(
-                            role="user",
-                            content=[
-                                {
-                                    "type": "tool_result",
-                                    "tool_use_id": tool_use.id,
-                                    "content": tool_result
-                                }
-                            ]
-                        ))
+                            tool_results.append({
+                                "type": "tool_result",
+                                "tool_use_id": tool_use.id,
+                                "content": tool_result
+                            })
 
-                        iteration += 1
-                        continue
+                        except Exception as e:
+                            print_detailed_error(f"Ошибка выполнения инструмента {tool_use.name}", e)
+                            # Добавляем результат с ошибкой
+                            tool_results.append({
+                                "type": "tool_result",
+                                "tool_use_id": tool_use.id,
+                                "content": f"Ошибка: {str(e)}"
+                            })
 
-                    except Exception as e:
-                        print_detailed_error(f"Ошибка выполнения инструмента {tool_use.name}", e)
-                        break
+                    # Добавляем все результаты инструментов в одном сообщении
+                    conversation.append(MessageParam(
+                        role="user",
+                        content=tool_results
+                    ))
+
+                    iteration += 1
+                    continue
             else:
                 # Модель дала финальный ответ без инструментов
                 conversation.append(MessageParam(role="assistant", content=message.content))
