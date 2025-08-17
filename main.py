@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Консольный чат с ИИ использующий MCP
+Консольный чат с ИИ используя Function Calling (самый надёжный способ)
 """
 
 import anthropic
@@ -8,13 +8,43 @@ import os
 import sys
 import asyncio
 import argparse
-import json
+import traceback
 
 from anthropic.types import MessageParam
 from dotenv import load_dotenv
 
 from config import MODEL, MAX_TOKENS, TEMPERATURE
 from mcp_client_github import GitHubMCPClient
+
+
+def print_detailed_error(context, error):
+    """Выводит подробную информацию об ошибке, включая саб-исключения"""
+    print(f"\n❌ {context}:")
+    print(f"Тип ошибки: {type(error).__name__}")
+    print(f"Сообщение: {error}")
+
+    # Обрабатываем ExceptionGroup (TaskGroup ошибки)
+    if isinstance(error, ExceptionGroup):
+        print(f"\n📦 ExceptionGroup содержит {len(error.exceptions)} исключений:")
+        for i, sub_error in enumerate(error.exceptions, 1):
+            print(f"\n  🔸 Исключение {i}:")
+            print(f"     Тип: {type(sub_error).__name__}")
+            print(f"     Сообщение: {sub_error}")
+            print(f"     Traceback:")
+            # Выводим traceback для каждого саб-исключения
+            sub_traceback = ''.join(traceback.format_exception(type(sub_error), sub_error, sub_error.__traceback__))
+            for line in sub_traceback.split('\n'):
+                if line.strip():
+                    print(f"       {line}")
+    else:
+        # Обычное исключение
+        print(f"\n📋 Полный traceback:")
+        error_traceback = ''.join(traceback.format_exception(type(error), error, error.__traceback__))
+        for line in error_traceback.split('\n'):
+            if line.strip():
+                print(f"  {line}")
+
+    print()  # Пустая строка для разделения
 
 
 def convert_mcp_to_anthropic_tools(tools_schema):
@@ -47,25 +77,35 @@ async def main():
         print("Должна быть установлена переменная окружения GITHUB_PERSONAL_ACCESS_TOKEN")
         sys.exit(1)
 
-    # Создаём MCP клиент
-    mcp_client = GitHubMCPClient(os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN"))
+    # Создаём MCP клиент с отладкой
+    mcp_client = GitHubMCPClient(os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN"), debug=True)
 
     # Получаем схему инструментов от MCP сервера
     print("Получаем список доступных инструментов...")
-    tools_schema = await mcp_client.get_tools_schema()
+    try:
+        tools_schema = await mcp_client.get_tools_schema()
 
-    # Конвертируем в формат Anthropic Function Calling
-    anthropic_tools = convert_mcp_to_anthropic_tools(tools_schema)
+        # Конвертируем в формат Anthropic Function Calling
+        anthropic_tools = convert_mcp_to_anthropic_tools(tools_schema)
 
-    print(f"Обнаружено {len(tools_schema)} инструментов:")
-    for tool_name in tools_schema:
-        print(f"  - {tool_name}")
-    print()
+        print(f"Обнаружено {len(tools_schema)} инструментов:")
+        for tool_name in tools_schema:
+            print(f"  - {tool_name}")
+        print()
+
+    except Exception as e:
+        print_detailed_error("Не удалось получить список инструментов", e)
+        print("\n💡 Возможные причины:")
+        print("  - Docker не запущен")
+        print("  - Нет доступа к ghcr.io/github/github-mcp-server")
+        print("  - Неверный GITHUB_PERSONAL_ACCESS_TOKEN")
+        print("  - Проблемы с сетью")
+        sys.exit(1)
 
     client = anthropic.Anthropic()
     conversation = []
 
-    system_prompt = """Ты - полезный ассистент с доступом к GitHub через MCP инструменты.
+    system_prompt = """Ты ассистент программиста и у тебя есть доступ к GitHub через MCP инструменты.
 
 Когда пользователь задает вопросы о GitHub (репозитории, коммиты, пользователи и т.д.), 
 используй доступные инструменты для получения актуальной информации.
@@ -82,14 +122,15 @@ async def main():
             if user_prompt == "q":
                 break
 
-            await process_user_prompt(user_prompt, client, mcp_client, conversation, anthropic_tools, system_prompt)
+            if user_prompt != "":
+                await process_user_prompt(user_prompt, client, mcp_client, conversation, anthropic_tools, system_prompt)
 
 
 async def process_user_prompt(user_prompt, client, mcp_client, conversation, tools, system_prompt):
     conversation.append(MessageParam(role="user", content=user_prompt))
 
     try:
-        max_iterations = 5
+        max_iterations = 10
         iteration = 0
 
         while iteration < max_iterations:
@@ -145,7 +186,7 @@ async def process_user_prompt(user_prompt, client, mcp_client, conversation, too
                         continue
 
                     except Exception as e:
-                        print(f"Ошибка выполнения инструмента {tool_use.name}: {e}")
+                        print_detailed_error(f"Ошибка выполнения инструмента {tool_use.name}", e)
                         break
             else:
                 # Модель дала финальный ответ без инструментов
@@ -154,7 +195,7 @@ async def process_user_prompt(user_prompt, client, mcp_client, conversation, too
                 break
 
     except Exception as e:
-        print(f"Ошибка: {e}")
+        print_detailed_error("Общая ошибка при обработке запроса", e)
 
 
 if __name__ == "__main__":
