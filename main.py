@@ -7,6 +7,7 @@ import anthropic
 import os
 import sys
 import asyncio
+import argparse
 
 from anthropic.types import MessageParam
 from dotenv import load_dotenv
@@ -16,6 +17,11 @@ from mcp_client_github import get_my_repos_with_commits
 
 
 def main():
+    # Парсинг аргументов командной строки
+    parser = argparse.ArgumentParser(description="Простой консольный чат с ИИ")
+    parser.add_argument("-p", "--prompt", type=str, help="Первый промпт для отправки")
+    args = parser.parse_args()
+
     # Загрузка переменных из .env файла
     load_dotenv()
 
@@ -31,14 +37,18 @@ def main():
     client = anthropic.Anthropic()
     conversation = []
 
-    print("Это чат с ИИ. Когда надоест, введи q")
-    while True:
-        user_prompt = input("> ")
+    # Если передан начальный промпт, обрабатываем его
+    if args.prompt:
+        process_user_prompt(args.prompt, client, conversation)
+    else:
+        print("Это чат с ИИ. Когда надоест, введи q")
+        while True:
+            user_prompt = input("> ")
 
-        if user_prompt == "q":
-            break
+            if user_prompt == "q":
+                break
 
-        process_user_prompt(user_prompt, client, conversation)
+            process_user_prompt(user_prompt, client, conversation)
 
 def process_user_prompt(user_prompt, client, conversation):
     conversation.append(MessageParam(role="user", content=user_prompt))
