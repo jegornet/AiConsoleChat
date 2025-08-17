@@ -37,16 +37,35 @@ async def get_my_repos_with_commits(token: str):
                 repo_name = repo["name"]
                 repo_description = repo.get("description", "")
                 try:
-                    # Получаем коммиты для каждого репозитория
-                    commits_result = await session.call_tool(
-                        "list_commits",
+                    # Получаем список всех веток
+                    branches_result = await session.call_tool(
+                        "list_branches",
                         {"owner": username, "repo": repo_name}
                     )
-                    commits_data = json.loads(commits_result.content[0].text)
-                    commit_count = len(commits_data)
-                    repo_commits.append((repo_name, commit_count, repo_description))
+                    branches_data = json.loads(branches_result.content[0].text)
+                    
+                    unique_commits = set()
+                    
+                    # Подсчитываем коммиты по всем веткам
+                    for branch in branches_data:
+                        branch_name = branch["name"]
+                        try:
+                            commits_result = await session.call_tool(
+                                "list_commits",
+                                {"owner": username, "repo": repo_name, "sha": branch_name}
+                            )
+                            commits_data = json.loads(commits_result.content[0].text)
+                            # Добавляем SHA коммитов в множество для исключения дубликатов
+                            for commit in commits_data:
+                                unique_commits.add(commit["sha"])
+                        except Exception:
+                            # Пропускаем ветку если не удалось получить коммиты
+                            continue
+                    
+                    total_commits = len(unique_commits)
+                    repo_commits.append((repo_name, total_commits, repo_description))
                 except Exception:
-                    # Если не удалось получить коммиты (приватный репо, ошибка и т.д.)
+                    # Если не удалось получить ветки или коммиты (приватный репо, ошибка и т.д.)
                     repo_commits.append((repo_name, 0, repo_description))
 
             return repo_commits
