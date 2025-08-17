@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Консольный чат с ИИ используя Function Calling (самый надёжный способ)
+Консольный чат с ИИ использующий MCP
 """
 
 import anthropic
@@ -13,8 +13,16 @@ import traceback
 from anthropic.types import MessageParam
 from dotenv import load_dotenv
 
-from config import MODEL, MAX_TOKENS, TEMPERATURE
+from config import MODEL, MAX_TOKENS, TEMPERATURE, COST_MTOKENS_IN, COST_MTOKENS_OUT
 from mcp_client_github import GitHubMCPClient
+
+
+def calculate_cost(input_tokens, output_tokens):
+    """Вычисляет стоимость запроса на основе количества токенов"""
+    input_cost = (input_tokens / 1_000_000) * COST_MTOKENS_IN
+    output_cost = (output_tokens / 1_000_000) * COST_MTOKENS_OUT
+    
+    return input_cost + output_cost
 
 
 def print_detailed_error(context, error):
@@ -118,7 +126,7 @@ async def main():
     if args.prompt:
         await process_user_prompt(args.prompt, client, mcp_client, conversation, anthropic_tools, system_prompt)
     else:
-        print("Это чат с ИИ с Function Calling для MCP. Когда надоест, введи q")
+        print("Это чат с ИИ, использующий MCP. Когда надоест, введи q")
         while True:
             user_prompt = input("> ")
 
@@ -131,6 +139,10 @@ async def main():
 
 async def process_user_prompt(user_prompt, client, mcp_client, conversation, tools, system_prompt):
     conversation.append(MessageParam(role="user", content=user_prompt))
+
+    total_cost = 0.0
+    total_input_tokens = 0
+    total_output_tokens = 0
 
     try:
         max_iterations = 10
@@ -146,6 +158,18 @@ async def process_user_prompt(user_prompt, client, mcp_client, conversation, too
                 messages=conversation,
                 tools=tools  # Передаём доступные инструменты
             )
+            
+            # Рассчитываем стоимость запроса
+            if hasattr(message, 'usage') and message.usage:
+                cost = calculate_cost(
+                    message.usage.input_tokens,
+                    message.usage.output_tokens,
+                )
+                total_cost += cost
+                total_input_tokens += message.usage.input_tokens
+                total_output_tokens += message.usage.output_tokens
+            else:
+                print("\n⚠️ Информация о токенах недоступна")
 
             response_content = message.content[0]
 
@@ -207,6 +231,8 @@ async def process_user_prompt(user_prompt, client, mcp_client, conversation, too
 
     except Exception as e:
         print_detailed_error("Общая ошибка при обработке запроса", e)
+
+    print(f"\n💰 С вас ${total_cost:.4f} (вход: {total_input_tokens}, выход: {total_output_tokens} токенов)")
 
 
 if __name__ == "__main__":
