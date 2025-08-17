@@ -38,22 +38,25 @@ def main():
         if user_prompt == "q":
             break
 
-        conversation.append(MessageParam(role="user", content=user_prompt))
+        process_user_prompt(user_prompt, client, conversation)
 
-        if user_prompt:
-            try:
-                response = send_message(client, conversation)
-                conversation.append(MessageParam(role="assistant", content=response))
-                print(response)
-                if "---STATS" in response:
-                    stats = get_github_stats()
-                    stats_prompt = "Перескажи этот отчёт в удобном виде: " + stats
-                    conversation.append(MessageParam(role="user", content=stats_prompt))
-                    stats_response = send_message(client, conversation)
-                    conversation.append(MessageParam(role="assistant", content=stats_response))
-                    print(stats_response)
-            except Exception as e:
-                print(e)
+def process_user_prompt(user_prompt, client, conversation):
+    conversation.append(MessageParam(role="user", content=user_prompt))
+
+    if user_prompt:
+        try:
+            response = send_message(client, conversation)
+            conversation.append(MessageParam(role="assistant", content=response))
+            print(response)
+            if "---STATS" in response:
+                stats = get_github_stats()
+                stats_prompt = "Перескажи этот отчёт в удобном виде: " + stats
+                conversation.append(MessageParam(role="user", content=stats_prompt))
+                stats_response = send_message(client, conversation)
+                conversation.append(MessageParam(role="assistant", content=stats_response))
+                print(stats_response)
+        except Exception as e:
+            print(e)
 
 def send_message(client, conversation):
     message = client.messages.create(
