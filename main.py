@@ -14,7 +14,7 @@ from anthropic.types import MessageParam
 from dotenv import load_dotenv
 
 from config import MODEL, MAX_TOKENS, TEMPERATURE, COST_MTOKENS_IN, COST_MTOKENS_OUT
-from mcp_client_github import GitHubMCPClient
+from mcp_client_stats import StatsMCPClient
 
 
 def calculate_cost(input_tokens, output_tokens):
@@ -86,8 +86,8 @@ async def main():
         print("Должна быть установлена переменная окружения GITHUB_PERSONAL_ACCESS_TOKEN")
         sys.exit(1)
 
-    # Создаём MCP клиент с отладкой
-    mcp_client = GitHubMCPClient(os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN"), debug=args.debug)
+    # Создаём StatsMCP клиент с отладкой
+    mcp_client = StatsMCPClient(os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN"), debug=args.debug)
 
     # Получаем схему инструментов от MCP сервера
     if args.debug:
@@ -107,21 +107,21 @@ async def main():
     except Exception as e:
         print_detailed_error("Не удалось получить список инструментов", e)
         print("\n💡 Возможные причины:")
-        print("  - Docker не запущен")
-        print("  - Нет доступа к ghcr.io/github/github-mcp-server")
-        print("  - Неверный GITHUB_PERSONAL_ACCESS_TOKEN")
-        print("  - Проблемы с сетью")
+        print("  - StatsMCP сервер не может запуститься")
+        print("  - Неверный GITHUB_PERSONAL_ACCESS_TOKEN")  
+        print("  - Проблемы с зависимостями Python")
+        print("  - Проблемы с доступом к GitHub MCP серверу")
         sys.exit(1)
 
     client = anthropic.Anthropic()
     conversation = []
 
-    system_prompt = """Ты ассистент программиста и у тебя есть доступ к GitHub через MCP инструменты.
+    system_prompt = """Ты ассистент программиста и у тебя есть доступ к GitHub статистике через MCP инструменты.
 
-Когда пользователь задает вопросы о GitHub (репозитории, коммиты, пользователи и т.д.), 
-используй доступные инструменты для получения актуальной информации.
+Когда пользователь задает вопросы о GitHub статистике (репозитории, коммиты и т.д.), 
+используй доступный инструмент github_stats для получения подробной статистики.
 
-Анализируй результаты инструментов и давай полезные ответы пользователю."""
+Анализируй результаты инструментов и давай полезные ответы пользователю с красивым форматированием."""
 
     if args.prompt:
         await process_user_prompt(args.prompt, client, mcp_client, conversation, anthropic_tools, system_prompt)
