@@ -1,155 +1,155 @@
 #!/usr/bin/env python3
-"""
-Простой MCP клиент для общения с mcp_server_python.py
-"""
 
 import asyncio
-import subprocess
-import json
-import logging
-from typing import Dict, Any, Optional
+from typing import Optional
+from contextlib import AsyncExitStack
+
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+from anthropic import Anthropic
+from dotenv import load_dotenv
+
+from config import MODEL, MAX_TOKENS
+
+load_dotenv()  # load environment variables from .env
 
 
-class PythonDockerMCPClient:
-    """Клиент для общения с MCP сервером Python Docker"""
-    
+class MCPClient:
     def __init__(self):
-        self.process: Optional[subprocess.Popen] = None
-        self.server_script = "mcp_server_python.py"
-        
-    async def start_server(self):
-        """Запускает MCP сервер"""
-        if self.process is None:
-            try:
-                self.process = subprocess.Popen(
-                    ["python3", self.server_script],
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    bufsize=0
+        # Initialize session and client objects
+        self.session: Optional[ClientSession] = None
+        self.exit_stack = AsyncExitStack()
+        self.anthropic = Anthropic()
+
+    async def connect_to_server(self, server_script_path: str):
+        """Connect to an MCP server
+
+        Args:
+            server_script_path: Path to the server script (.py or .js)
+        """
+        is_python = server_script_path.endswith('.py')
+        is_js = server_script_path.endswith('.js')
+        if not (is_python or is_js):
+            raise ValueError("Server script must be a .py or .js file")
+
+        command = "python3" if is_python else "node"
+        server_params = StdioServerParameters(
+            command=command,
+            args=[server_script_path],
+            env=None
+        )
+
+        stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
+        self.stdio, self.write = stdio_transport
+        self.session = await self.exit_stack.enter_async_context(ClientSession(self.stdio, self.write))
+
+        await self.session.initialize()
+
+        # List available tools
+        response = await self.session.list_tools()
+        tools = response.tools
+        print("\nConnected to server with tools:", [tool.name for tool in tools])
+
+    async def process_query(self, query: str) -> str:
+        """Process a query using Claude and available tools"""
+        messages = [
+            {
+                "role": "user",
+                "content": query
+            }
+        ]
+
+        response = await self.session.list_tools()
+        available_tools = [{
+            "name": tool.name,
+            "description": tool.description,
+            "input_schema": tool.inputSchema
+        } for tool in response.tools]
+
+        # Initial Claude API call
+        response = self.anthropic.messages.create(
+            model=MODEL,
+            max_tokens=MAX_TOKENS,
+            messages=messages,
+            tools=available_tools
+        )
+
+        # Process response and handle tool calls
+        tool_results = []
+        final_text = []
+
+        for content in response.content:
+            if content.type == 'text':
+                final_text.append(content.text)
+            elif content.type == 'tool_use':
+                tool_name = content.name
+                tool_args = content.input
+
+                # Execute tool call
+                result = await self.session.call_tool(tool_name, tool_args)
+                tool_results.append({"call": tool_name, "result": result})
+                final_text.append(f"[Calling tool {tool_name} with args {tool_args}]")
+
+                # Continue conversation with tool results
+                if hasattr(content, 'text') and content.text:
+                    messages.append({
+                        "role": "assistant",
+                        "content": content.text
+                    })
+                messages.append({
+                    "role": "user",
+                    "content": result.content
+                })
+
+                # Get next response from Claude
+                response = self.anthropic.messages.create(
+                    model=MODEL,
+                    max_tokens=MAX_TOKENS,
+                    messages=messages,
                 )
-                # Даем серверу время на запуск
-                await asyncio.sleep(0.5)
-                
-                # Инициализируем сессию
-                await self._initialize_session()
+
+                final_text.append(response.content[0].text)
+
+        return "\n".join(final_text)
+
+    async def chat_loop(self):
+        """Run an interactive chat loop"""
+        print("\nMCP Client Started!")
+        print("Type your queries or 'quit' to exit.")
+
+        while True:
+            try:
+                query = input("\nQuery: ").strip()
+
+                if query.lower() == 'quit':
+                    break
+
+                response = await self.process_query(query)
+                print("\n" + response)
+
             except Exception as e:
-                raise Exception(f"Не удалось запустить MCP сервер: {e}")
-    
-    async def _initialize_session(self):
-        """Инициализирует сессию MCP"""
-        init_request = {
-            "jsonrpc": "2.0",
-            "id": 0,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {
-                    "tools": {}
-                },
-                "clientInfo": {
-                    "name": "python-docker-client",
-                    "version": "1.0.0"
-                }
-            }
-        }
-        
-        # Отправляем запрос инициализации
-        init_response = await self.send_request(init_request)
-        
-        if "error" in init_response:
-            raise Exception(f"Ошибка инициализации: {init_response['error']}")
-        
-        # Отправляем initialized notification
-        initialized_notification = {
-            "jsonrpc": "2.0",
-            "method": "notifications/initialized"
-        }
-        
-        request_json = json.dumps(initialized_notification) + "\n"
-        self.process.stdin.write(request_json)
-        self.process.stdin.flush()
-    
-    async def send_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        """Отправляет JSON-RPC запрос серверу"""
-        if self.process is None:
-            await self.start_server()
-        
-        try:
-            # Отправляем запрос
-            request_json = json.dumps(request) + "\n"
-            self.process.stdin.write(request_json)
-            self.process.stdin.flush()
-            
-            # Читаем ответ
-            response_line = self.process.stdout.readline()
-            if not response_line:
-                raise Exception("Сервер не ответил")
-            
-            return json.loads(response_line.strip())
-        except Exception as e:
-            raise Exception(f"Ошибка общения с сервером: {e}")
-    
-    async def get_tools_schema(self) -> Dict[str, Any]:
-        """Получает схему доступных инструментов"""
-        request = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/list",
-            "params": {}
-        }
-        
-        response = await self.send_request(request)
-        
-        if "error" in response:
-            raise Exception(f"Ошибка получения инструментов: {response['error']}")
-        
-        # Преобразуем список инструментов в словарь
-        tools_schema = {}
-        for tool in response.get("result", {}).get("tools", []):
-            tools_schema[tool["name"]] = {
-                "description": tool.get("description", ""),
-                "inputSchema": tool.get("inputSchema", {"type": "object", "properties": {}})
-            }
-        
-        return tools_schema
-    
-    async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
-        """Вызывает инструмент с заданными аргументами"""
-        request = {
-            "jsonrpc": "2.0",
-            "id": 2,
-            "method": "tools/call",
-            "params": {
-                "name": tool_name,
-                "arguments": arguments
-            }
-        }
-        
-        response = await self.send_request(request)
-        
-        if "error" in response:
-            raise Exception(f"Ошибка вызова инструмента {tool_name}: {response['error']}")
-        
-        # Извлекаем результат выполнения
-        result = response.get("result", {})
-        if "content" in result:
-            # Если есть content, извлекаем текст
-            content = result["content"]
-            if isinstance(content, list) and len(content) > 0:
-                return content[0].get("text", str(content))
-            return str(content)
-        
-        return str(result)
-    
-    def close(self):
-        """Закрывает соединение с сервером"""
-        if self.process:
-            self.process.terminate()
-            self.process.wait()
-            self.process = None
-    
-    def __del__(self):
-        """Автоматически закрываем соединение при удалении объекта"""
-        self.close()
+                print(f"\nError: {str(e)}")
+
+    async def cleanup(self):
+        """Clean up resources"""
+        await self.exit_stack.aclose()
+
+
+async def main():
+    if len(sys.argv) < 2:
+        print("Usage: python3 client.py <path_to_server_script>")
+        sys.exit(1)
+
+    client = MCPClient()
+    try:
+        await client.connect_to_server(sys.argv[1])
+        await client.chat_loop()
+    finally:
+        await client.cleanup()
+
+
+if __name__ == "__main__":
+    import sys
+
+    asyncio.run(main())
