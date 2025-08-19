@@ -22,7 +22,7 @@ class PythonDockerMCPClient:
         if self.process is None:
             try:
                 self.process = subprocess.Popen(
-                    ["python", self.server_script],
+                    ["python3", self.server_script],
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
