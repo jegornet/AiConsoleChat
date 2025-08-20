@@ -87,29 +87,18 @@ class MCPClient:
                 tool_args = content.input
 
                 # Execute tool call
+                final_text.append(f"[Calling tool {tool_name} with args {tool_args}]")
                 result = await self.session.call_tool(tool_name, tool_args)
                 tool_results.append({"call": tool_name, "result": result})
-                final_text.append(f"[Calling tool {tool_name} with args {tool_args}]")
+
 
                 # Continue conversation with tool results
-                if hasattr(content, 'text') and content.text:
-                    messages.append({
-                        "role": "assistant",
-                        "content": content.text
-                    })
                 messages.append({
-                    "role": "user",
-                    "content": result.content
+                    "role": "assistant",
+                    "content": result.content[0].text
                 })
-
-                # Get next response from Claude
-                response = self.anthropic.messages.create(
-                    model=MODEL,
-                    max_tokens=MAX_TOKENS,
-                    messages=messages,
-                )
-
-                final_text.append(response.content[0].text)
+                if hasattr(result.content[0], 'text'):
+                    final_text.append(result.content[0].text)
 
         return "\n".join(final_text)
 
@@ -120,9 +109,9 @@ class MCPClient:
 
         while True:
             try:
-                query = input("\nQuery: ").strip()
+                query = input("\n> ").strip()
 
-                if query.lower() == 'quit':
+                if query.lower() == 'quit' or query.lower() == 'q':
                     break
 
                 response = await self.process_query(query)
@@ -137,13 +126,10 @@ class MCPClient:
 
 
 async def main():
-    if len(sys.argv) < 2:
-        print("Usage: python3 client.py <path_to_server_script>")
-        sys.exit(1)
-
+    server = "mcp_server_python.py"
     client = MCPClient()
     try:
-        await client.connect_to_server(sys.argv[1])
+        await client.connect_to_server(server)
         await client.chat_loop()
     finally:
         await client.cleanup()
