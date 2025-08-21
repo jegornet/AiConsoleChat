@@ -106,19 +106,41 @@ class MCPClient:
         """Run an interactive chat loop"""
         print("\nMCP Client Started!")
         print("Type your queries or 'quit' to exit.")
+        print("For multi-line input, enter multiple lines and press Enter on empty line to send.")
+
+        line_buffer = []
 
         while True:
             try:
-                query = input("\n> ").strip()
+                # Show appropriate prompt based on buffer state
+                if line_buffer:
+                    prompt = "| "
+                else:
+                    prompt = "\n> "
+                
+                line = input(prompt)
 
-                if query.lower() == 'quit' or query.lower() == 'q':
+                # Check for quit command
+                if line.lower() == 'quit' or line.lower() == 'q':
+                    if line_buffer:
+                        print("Discarding buffered input. Goodbye!")
                     break
 
-                response = await self.process_query(query)
-                print("\n" + response)
+                # If line is empty and buffer is not empty, process the message
+                if not line and line_buffer:
+                    query = "\n".join(line_buffer)
+                    line_buffer.clear()
+                    
+                    response = await self.process_query(query)
+                    print("\n" + response)
+                
+                # If line is not empty, add to buffer
+                elif line:
+                    line_buffer.append(line)
 
             except Exception as e:
                 print(f"\nError: {str(e)}")
+                line_buffer.clear()  # Clear buffer on error
 
     async def cleanup(self):
         """Clean up resources"""
@@ -136,6 +158,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    import sys
-
     asyncio.run(main())
