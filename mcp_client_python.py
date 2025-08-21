@@ -114,7 +114,7 @@ class MCPClient:
             try:
                 # Show appropriate prompt based on buffer state
                 if line_buffer:
-                    prompt = "| "
+                    prompt = "  "
                 else:
                     prompt = "\n> "
                 
