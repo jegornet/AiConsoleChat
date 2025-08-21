@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch, MagicMock
 import asyncio
 import docker.errors
 
-from mcp_server_python import execute_python, validate_python, mcp
+from mcp_server_python import execute_python, mcp
 
 
 class TestExecutePython(unittest.TestCase):
@@ -30,11 +30,13 @@ class TestExecutePython(unittest.TestCase):
         # Проверки
         assert result == 'Hello, World!\n'
         mock_docker.from_env.assert_called_once()
-        mock_container.run.assert_called_once_with(
-            'python:3',
-            'python -c "print("Hello, World!")"',
-            remove=True
-        )
+        # Проверяем что команда содержит нужные элементы вместо точного совпадения
+        call_args = mock_container.run.call_args
+        assert call_args[0][0] == 'python:3'  # первый аргумент - образ
+        assert 'import tempfile, base64' in call_args[0][1]  # команда содержит импорты
+        assert 'cHJpbnQoIkhlbGxvLCBXb3JsZCEiKQ==' in call_args[0][1]  # base64 encoded код
+        assert call_args[1]['stderr'] == True
+        assert call_args[1]['remove'] == True
     
     @patch('mcp_server_python.docker')
     def test_execute_python_math_calculation(self, mock_docker):
