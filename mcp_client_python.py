@@ -71,6 +71,11 @@ class MCPClient:
         response = self.anthropic.messages.create(
             model=MODEL,
             max_tokens=MAX_TOKENS,
+            system="""
+Ты генератор автоматических тестов для кода на Python. 
+Пользователь пишет функцию на Python, ты в ответ выдаёшь этот же код, за которым следуют тесты для него.
+Критически важно выдавать только Python код, никакого дополнительного текста быть не должно. 
+            """,
             messages=messages,
             tools=available_tools
         )
@@ -114,7 +119,7 @@ class MCPClient:
             try:
                 # Show appropriate prompt based on buffer state
                 if line_buffer:
-                    prompt = "| "
+                    prompt = "  "
                 else:
                     prompt = "\n> "
                 
