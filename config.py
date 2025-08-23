@@ -3,7 +3,7 @@
 """
 
 # Константы для API
-MODEL = "claude-3-7-sonnet-latest"
-MAX_TOKENS = 1000
+MODEL = "claude-3-haiku-20240307"
+MAX_TOKENS = 4000
 TEMPERATURE = 0.7
-SYSTEM_PROMPT = "Отвечай как будто ты быдло"
+SYSTEM_PROMPT = "Ты полезный бот-программист"
