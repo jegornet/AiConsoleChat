@@ -67,39 +67,89 @@ class MCPClient:
             "input_schema": tool.inputSchema
         } for tool in response.tools]
 
-        # Initial Claude API call
-        response = self.anthropic.messages.create(
-            model=MODEL,
-            max_tokens=MAX_TOKENS,
-            system=SYSTEM_PROMPT,
-            messages=messages,
-            tools=available_tools
-        )
-
-        # Process response and handle tool calls
-        tool_results = []
         final_text = []
+        max_iterations = 10  # Prevent infinite loops
+        iteration = 0
 
-        for content in response.content:
-            if content.type == 'text':
-                final_text.append(content.text)
-            elif content.type == 'tool_use':
-                tool_name = content.name
-                tool_args = content.input
+        while iteration < max_iterations:
+            iteration += 1
+            
+            # Claude API call
+            response = self.anthropic.messages.create(
+                model=MODEL,
+                max_tokens=MAX_TOKENS,
+                system=SYSTEM_PROMPT,
+                messages=messages,
+                tools=available_tools
+            )
 
-                # Execute tool call
-                final_text.append(f"[Calling tool {tool_name} with args {tool_args}]")
-                result = await self.session.call_tool(tool_name, tool_args)
-                tool_results.append({"call": tool_name, "result": result})
+            # Add assistant message to conversation
+            assistant_content = []
+            tool_uses = []
+            has_tool_calls = False
 
+            for content in response.content:
+                if content.type == 'text':
+                    final_text.append(content.text)
+                    assistant_content.append(content.model_dump())
+                elif content.type == 'tool_use':
+                    has_tool_calls = True
+                    tool_uses.append(content)
+                    assistant_content.append(content.model_dump())
 
-                # Continue conversation with tool results
+            # Add assistant message to conversation history
+            if assistant_content:
                 messages.append({
-                    "role": "assistant",
-                    "content": result.content[0].text
+                    "role": "assistant", 
+                    "content": assistant_content
                 })
-                if hasattr(result.content[0], 'text'):
-                    final_text.append(result.content[0].text)
+
+            # If no tool calls, we're done
+            if not has_tool_calls:
+                break
+
+            # Execute tool calls and collect results
+            tool_results = []
+            for tool_use in tool_uses:
+                tool_name = tool_use.name
+                tool_args = tool_use.input
+                tool_id = tool_use.id
+
+                final_text.append(f"[Calling tool {tool_name} with args {tool_args}]")
+                
+                try:
+                    result = await self.session.call_tool(tool_name, tool_args)
+                    if result.isError:
+                        result_text = f"Error: {result.content[0].text}"
+                    else:
+                        result_text = result.content[0].text
+                    
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tool_id,
+                        "content": result_text
+                    })
+                    final_text.append(f"[Tool result: {result_text}]")
+                    
+                except Exception as e:
+                    error_text = f"Tool execution error: {str(e)}"
+                    tool_results.append({
+                        "type": "tool_result", 
+                        "tool_use_id": tool_id,
+                        "content": error_text,
+                        "is_error": True
+                    })
+                    final_text.append(f"[Tool error: {error_text}]")
+
+            # Add tool results to conversation
+            if tool_results:
+                messages.append({
+                    "role": "user",
+                    "content": tool_results
+                })
+
+        if iteration >= max_iterations:
+            final_text.append(f"[Warning: Reached maximum iterations ({max_iterations})]")
 
         return "\n".join(final_text)
 

@@ -7,6 +7,7 @@ import os
 import urllib.request
 import urllib.error
 import paramiko
+import ssl
 
 from mcp.server.fastmcp import FastMCP
 from dotenv import load_dotenv
@@ -82,8 +83,13 @@ async def fetch_url(url: str) -> str:
             headers={'User-Agent': 'MCP-Server/1.0'}
         )
         
-        # Выполняем запрос с таймаутом
-        with urllib.request.urlopen(req, timeout=30) as response:
+        # Создаем SSL контекст с менее строгой проверкой сертификатов
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        
+        # Выполняем запрос с таймаутом и SSL контекстом
+        with urllib.request.urlopen(req, timeout=30, context=ssl_context) as response:
             # Читаем содержимое
             content = response.read()
             
