@@ -10,7 +10,7 @@ from mcp.client.stdio import stdio_client
 from anthropic import Anthropic
 from dotenv import load_dotenv
 
-from config import MODEL, MAX_TOKENS
+from config import MODEL, MAX_TOKENS, IS_MULTILINE, SYSTEM_PROMPT
 
 load_dotenv()  # load environment variables from .env
 
@@ -71,6 +71,7 @@ class MCPClient:
         response = self.anthropic.messages.create(
             model=MODEL,
             max_tokens=MAX_TOKENS,
+            system=SYSTEM_PROMPT,
             messages=messages,
             tools=available_tools
         )
@@ -106,14 +107,15 @@ class MCPClient:
         """Run an interactive chat loop"""
         print("\nMCP Client Started!")
         print("Type your queries or 'quit' to exit.")
-        print("For multi-line input, enter multiple lines and press Enter on empty line to send.")
+        if IS_MULTILINE:
+            print("For multi-line input, enter multiple lines and press Enter on empty line to send.")
 
         line_buffer = []
 
         while True:
             try:
                 # Show appropriate prompt based on buffer state
-                if line_buffer:
+                if IS_MULTILINE and line_buffer:
                     prompt = "  "
                 else:
                     prompt = "\n> "
@@ -125,6 +127,10 @@ class MCPClient:
                     if line_buffer:
                         print("Discarding buffered input. Goodbye!")
                     break
+
+                if not IS_MULTILINE:
+                    response = await self.process_query(line)
+                    print("\n" + response)
 
                 # If line is empty and buffer is not empty, process the message
                 if not line and line_buffer:
@@ -148,7 +154,7 @@ class MCPClient:
 
 
 async def main():
-    server = "mcp_server_python.py"
+    server = "mcp_server.py"
     client = MCPClient()
     try:
         await client.connect_to_server(server)

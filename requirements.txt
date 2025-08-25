@@ -4,4 +4,4 @@ asyncio
 mcp
 docker
 fastmcp
-pytest
+paramiko
