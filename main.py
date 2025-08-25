@@ -3,11 +3,12 @@
 Простой консольный чат с ИИ
 """
 
+import argparse
 import anthropic
 import os
 import sys
 
-from anthropic.types import MessageParam, ModelParam
+from anthropic.types import MessageParam
 from dotenv import load_dotenv
 
 from config import MODEL, MAX_TOKENS, TEMPERATURE, SYSTEM_PROMPT
@@ -34,6 +35,16 @@ models_list = [
 ]
 
 def main():
+    # Парсинг аргументов командной строки
+    parser = argparse.ArgumentParser(description="Консольный чат с ИИ")
+    parser.add_argument("--model", choices=models_list, help="Модель для использования")
+    parser.add_argument("--max-tokens", type=int, help="Максимальное количество токенов")
+    parser.add_argument("--temperature", type=float, help="Температура (0.0-1.0)")
+    parser.add_argument("--system-prompt", help="Системный промпт")
+    parser.add_argument("--exec-prompt", help="Выполнить промпт и выйти")
+    parser.add_argument("--exec-prompt-file", help="Выполнить промпт из файла и выйти")
+    args = parser.parse_args()
+
     # Загрузка переменных из .env файла
     load_dotenv()
     
@@ -42,12 +53,53 @@ def main():
         print("Должна быть установлена переменная окружения ANTHROPIC_API_KEY")
         sys.exit(1)
     
-    client = anthropic.Anthropic()
-    conversation = []
-    current_model = MODEL
-    current_temperature = TEMPERATURE
-    current_max_tokens = MAX_TOKENS
+    # Валидация аргументов командной строки
+    if args.temperature is not None and not (0.0 <= args.temperature <= 1.0):
+        print("Температура должна быть от 0.0 до 1.0")
+        sys.exit(1)
+    
+    if args.max_tokens is not None and args.max_tokens <= 0:
+        print("Количество токенов должно быть положительным числом")
+        sys.exit(1)
 
+    client = anthropic.Anthropic()
+    current_model = args.model if args.model else MODEL
+    current_temperature = args.temperature if args.temperature is not None else TEMPERATURE
+    current_max_tokens = args.max_tokens if args.max_tokens else MAX_TOKENS
+    current_system_prompt = args.system_prompt if args.system_prompt else SYSTEM_PROMPT
+
+    # Обработка режима выполнения одного промпта
+    exec_prompt_text = None
+    if args.exec_prompt:
+        exec_prompt_text = args.exec_prompt
+    elif args.exec_prompt_file:
+        try:
+            with open(args.exec_prompt_file, 'r', encoding='utf-8') as f:
+                exec_prompt_text = f.read().strip()
+        except FileNotFoundError:
+            print(f"Файл не найден: {args.exec_prompt_file}")
+            sys.exit(1)
+        except Exception as e:
+            print(f"Ошибка при чтении файла: {e}")
+            sys.exit(1)
+
+    if exec_prompt_text:
+        try:
+            message = client.messages.create(
+                model=current_model,
+                max_tokens=current_max_tokens,
+                temperature=current_temperature,
+                system=current_system_prompt,
+                messages=[MessageParam(role="user", content=exec_prompt_text)],
+            )
+            response = message.content[0].text
+            print(response)
+        except Exception as e:
+            print(e)
+            sys.exit(1)
+        return
+
+    conversation = []
     print("Это чат с ИИ. Доступные команды:")
     print("/models - список моделей")
     print("/model <название> - сменить модель")
@@ -115,7 +167,7 @@ def main():
                     model=current_model,
                     max_tokens=current_max_tokens,
                     temperature=current_temperature,
-                    system=SYSTEM_PROMPT,
+                    system=current_system_prompt,
                     messages=conversation,
                 )
                 response = message.content[0].text
