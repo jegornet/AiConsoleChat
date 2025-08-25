@@ -45,13 +45,20 @@ def main():
     client = anthropic.Anthropic()
     conversation = []
     current_model = MODEL
+    current_temperature = TEMPERATURE
+    current_max_tokens = MAX_TOKENS
 
-    print("Это чат с ИИ. Когда надоест, введи q")
-    print("Доступные команды: /models - список моделей, /model <название> - сменить модель")
+    print("Это чат с ИИ. Доступные команды:")
+    print("/models - список моделей")
+    print("/model <название> - сменить модель")
+    print("/temperature <значение> - установить температуру (0.0-1.0)")
+    print("/max_tokens <значение> - установить максимальное количество токенов")
+    print("/clear - очистить диалог")
+    print("/q - выход")
     while True:
         user_prompt = input("> ")
 
-        if user_prompt == "q":
+        if user_prompt == "/q":
             break
 
         if user_prompt == "/models":
@@ -69,14 +76,45 @@ def main():
                 print("Неизвестная модель. Используйте /models для просмотра доступных моделей.")
             continue
 
+        if user_prompt.startswith("/temperature "):
+            temp_str = user_prompt[13:].strip()
+            try:
+                temp_value = float(temp_str)
+                if 0.0 <= temp_value <= 1.0:
+                    current_temperature = temp_value
+                    print(f"Температура изменена на: {current_temperature}")
+                else:
+                    print("Температура должна быть от 0.0 до 1.0")
+            except ValueError:
+                print("Неверный формат температуры. Используйте число от 0.0 до 1.0")
+            continue
+
+        if user_prompt.startswith("/max_tokens "):
+            tokens_str = user_prompt[12:].strip()
+            try:
+                tokens_value = int(tokens_str)
+                if tokens_value > 0:
+                    current_max_tokens = tokens_value
+                    print(f"Максимальное количество токенов изменено на: {current_max_tokens}")
+                else:
+                    print("Количество токенов должно быть положительным числом")
+            except ValueError:
+                print("Неверный формат количества токенов. Используйте положительное целое число")
+            continue
+
+        if user_prompt == "/clear":
+            conversation = []
+            print("Диалог очищен")
+            continue
+
         conversation.append(MessageParam(role="user", content=user_prompt))
 
         if user_prompt:
             try:
                 message = client.messages.create(
                     model=current_model,
-                    max_tokens=MAX_TOKENS,
-                    temperature=TEMPERATURE,
+                    max_tokens=current_max_tokens,
+                    temperature=current_temperature,
                     system=SYSTEM_PROMPT,
                     messages=conversation,
                 )
