@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "filesystem": {
+      "command": "python3",
+      "args": ["mcp_server.py"],
+      "description": "Filesystem MCP server"
+    }
+  }
+}

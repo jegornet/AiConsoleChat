@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import asyncio
+import json
+import os
 from typing import Optional
 from contextlib import AsyncExitStack
 
@@ -21,23 +23,30 @@ class MCPClient:
         self.session: Optional[ClientSession] = None
         self.exit_stack = AsyncExitStack()
         self.anthropic = Anthropic()
+        self.max_tokens = MAX_TOKENS  # Current max tokens setting
 
-    async def connect_to_server(self, server_script_path: str):
+    def load_mcp_config(self, config_path: str = "mcp.json") -> dict:
+        """Load MCP configuration from JSON file"""
+        if not os.path.exists(config_path):
+            raise FileNotFoundError(f"MCP configuration file not found: {config_path}")
+        
+        with open(config_path, 'r') as f:
+            return json.load(f)
+
+    async def connect_to_server(self, server_config: dict):
         """Connect to an MCP server
 
         Args:
-            server_script_path: Path to the server script (.py or .js)
+            server_config: Server configuration dictionary with 'command' and 'args'
         """
-        is_python = server_script_path.endswith('.py')
-        is_js = server_script_path.endswith('.js')
-        if not (is_python or is_js):
-            raise ValueError("Server script must be a .py or .js file")
-
-        command = "python3" if is_python else "node"
+        command = server_config.get('command', 'python3')
+        args = server_config.get('args', [])
+        env = server_config.get('env', None)
+        
         server_params = StdioServerParameters(
             command=command,
-            args=[server_script_path],
-            env=None
+            args=args,
+            env=env
         )
 
         stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
@@ -77,7 +86,7 @@ class MCPClient:
             # Claude API call
             response = self.anthropic.messages.create(
                 model=MODEL,
-                max_tokens=MAX_TOKENS,
+                max_tokens=self.max_tokens,
                 system=SYSTEM_PROMPT,
                 messages=messages,
                 tools=available_tools
@@ -155,10 +164,9 @@ class MCPClient:
 
     async def chat_loop(self):
         """Run an interactive chat loop"""
-        print("\nMCP Client Started!")
-        print("Type your queries or 'quit' to exit.")
-        if IS_MULTILINE:
-            print("For multi-line input, enter multiple lines and press Enter on empty line to send.")
+        print("Это чат с ИИ. Команды:")
+        print("/quit, /q – выход")
+        print(f"/max_tokens [число] – изменить количество токенов (текущее: {self.max_tokens})")
 
         line_buffer = []
 
@@ -173,10 +181,25 @@ class MCPClient:
                 line = input(prompt)
 
                 # Check for quit command
-                if line.lower() == 'quit' or line.lower() == 'q':
-                    if line_buffer:
-                        print("Discarding buffered input. Goodbye!")
+                if line.lower() == '/quit' or line.lower() == '/q':
                     break
+                
+                # Check for max_tokens command
+                if line.lower().startswith('/max_tokens'):
+                    parts = line.split()
+                    if len(parts) == 2:
+                        try:
+                            new_tokens = int(parts[1])
+                            if new_tokens > 0:
+                                self.max_tokens = new_tokens
+                                print(f"Количество токенов изменено на {self.max_tokens}")
+                            else:
+                                print("Количество токенов должно быть больше 0")
+                        except ValueError:
+                            print("Неверный формат числа")
+                    else:
+                        print(f"Текущее количество токенов: {self.max_tokens}")
+                    continue
 
                 if not IS_MULTILINE:
                     response = await self.process_query(line)
@@ -204,10 +227,21 @@ class MCPClient:
 
 
 async def main():
-    server = "mcp_server.py"
     client = MCPClient()
     try:
-        await client.connect_to_server(server)
+        # Load MCP configuration
+        config = client.load_mcp_config()
+        servers = config.get("servers", {})
+        
+        if not servers:
+            raise ValueError("No servers configured in mcp.json")
+        
+        # Use the first server (you could make this configurable)
+        server_name = next(iter(servers))
+        server_config = servers[server_name]
+        
+        print(f"Connecting to server: {server_name}")
+        await client.connect_to_server(server_config)
         await client.chat_loop()
     finally:
         await client.cleanup()
