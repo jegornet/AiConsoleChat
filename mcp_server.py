@@ -1,117 +1,106 @@
 #!/usr/bin/env python3
 """
-MCP сервер для выполнения удалённых команд и получения содержимого URL
+MCP сервер для работы с файловой системой и получения содержимого URL
 """
 
 import os
-import urllib.request
-import urllib.error
-import paramiko
-import ssl
 
 from mcp.server.fastmcp import FastMCP
 from dotenv import load_dotenv
 
 load_dotenv()
 
-mcp = FastMCP("hosting")
+mcp = FastMCP("filesystem")
 
 
 @mcp.tool()
-async def execute_remote_command(command: str) -> str:
+async def list_files(directory: str = ".") -> str:
     """
-    Выполняет команду на удалённом сервере через SSH.
-    Использует SSH_CREDENTIALS из переменной окружения в формате user@hostname.
-    Возвращает вывод команды с удалённого сервера.
+    Возвращает список файлов и директорий в указанной папке.
+    По умолчанию показывает содержимое текущей директории.
     """
-    ssh_credentials = os.getenv('SSH_CREDENTIALS')
-    if not ssh_credentials:
-        return "Error: SSH_CREDENTIALS environment variable is not set"
-
-    ssh_key = os.getenv('SSH_KEY')
-    if not ssh_key:
-        return "Error: SSH_KEY environment variable is not set"
-
     try:
-        # Парсим учетные данные
-        if '@' not in ssh_credentials:
-            return "Error: SSH_CREDENTIALS must be in format user@hostname"
+        files = os.listdir(directory)
+        result = []
         
-        username, hostname = ssh_credentials.split('@', 1)
+        for file in sorted(files):
+            file_path = os.path.join(directory, file)
+            if os.path.isdir(file_path):
+                result.append(f"[DIR]  {file}")
+            else:
+                result.append(f"[FILE] {file}")
         
-        # Создаем SSH клиент
-        ssh_client = paramiko.SSHClient()
-        ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
-        ssh_client.connect(
-            hostname=hostname,
-            username=username,
-            key_filename=ssh_key,
-            allow_agent=True,
-            timeout=30,
-        )
-
-        # Выполняем команду
-        stdin, stdout, stderr = ssh_client.exec_command(command, timeout=30)
-        
-        # Читаем результат
-        stdout_data = stdout.read().decode('utf-8')
-        stderr_data = stderr.read().decode('utf-8')
-        exit_code = stdout.channel.recv_exit_status()
-        
-        ssh_client.close()
-        
-        if exit_code == 0:
-            return stdout_data if stdout_data else "Command executed successfully (no output)"
-        else:
-            return f"Error (exit code {exit_code}): {stderr_data}"
-            
+        return "\n".join(result)
+    except FileNotFoundError:
+        return f"Error: Directory '{directory}' not found"
+    except PermissionError:
+        return f"Error: Permission denied accessing '{directory}'"
     except Exception as e:
-        return f"Error executing remote command: {str(e)}"
+        return f"Error listing files: {str(e)}"
 
 
 @mcp.tool()
-async def fetch_url(url: str) -> str:
+async def read_file(file_path: str) -> str:
     """
-    Получает содержимое URL и возвращает его в виде строки.
-    Поддерживает HTTP и HTTPS протоколы.
+    Читает содержимое файла и возвращает его как строку.
     """
     try:
-        # Создаем запрос с User-Agent для совместимости
-        req = urllib.request.Request(
-            url, 
-            headers={'User-Agent': 'MCP-Server/1.0'}
-        )
-        
-        # Создаем SSL контекст с менее строгой проверкой сертификатов
-        ssl_context = ssl.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
-        
-        # Выполняем запрос с таймаутом и SSL контекстом
-        with urllib.request.urlopen(req, timeout=30, context=ssl_context) as response:
-            # Читаем содержимое
-            content = response.read()
-            
-            # Пытаемся декодировать как текст
-            try:
-                # Определяем кодировку из заголовков
-                charset = 'utf-8'
-                content_type = response.headers.get('content-type', '')
-                if 'charset=' in content_type:
-                    charset = content_type.split('charset=')[1].split(';')[0].strip()
-                
-                return content.decode(charset)
-            except UnicodeDecodeError:
-                # Если не удается декодировать как текст, возвращаем информацию о файле
-                return f"Binary content ({len(content)} bytes), Content-Type: {response.headers.get('content-type', 'unknown')}"
-                
-    except urllib.error.HTTPError as e:
-        return f"HTTP Error {e.code}: {e.reason}"
-    except urllib.error.URLError as e:
-        return f"URL Error: {str(e.reason)}"
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    except FileNotFoundError:
+        return f"Error: File '{file_path}' not found"
+    except PermissionError:
+        return f"Error: Permission denied reading '{file_path}'"
+    except UnicodeDecodeError:
+        try:
+            with open(file_path, 'r', encoding='latin-1') as f:
+                return f"Warning: File contains non-UTF-8 characters\n{f.read()}"
+        except Exception:
+            return f"Error: Cannot decode file '{file_path}' as text"
     except Exception as e:
-        return f"Error fetching URL: {str(e)}"
+        return f"Error reading file: {str(e)}"
+
+
+@mcp.tool()
+async def write_file(file_path: str, content: str) -> str:
+    """
+    Записывает содержимое в файл. Если файл не существует, он будет создан.
+    Если файл существует, его содержимое будет перезаписано.
+    """
+    try:
+        # Создаем директории при необходимости
+        directory = os.path.dirname(file_path)
+        if directory and not os.path.exists(directory):
+            os.makedirs(directory)
+        
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        return f"File '{file_path}' written successfully ({len(content)} characters)"
+    except PermissionError:
+        return f"Error: Permission denied writing to '{file_path}'"
+    except Exception as e:
+        return f"Error writing file: {str(e)}"
+
+
+@mcp.tool()
+async def delete_file(file_path: str) -> str:
+    """
+    Удаляет указанный файл.
+    """
+    try:
+        if not os.path.exists(file_path):
+            return f"Error: File '{file_path}' not found"
+        
+        if os.path.isdir(file_path):
+            return f"Error: '{file_path}' is a directory, not a file"
+        
+        os.remove(file_path)
+        return f"File '{file_path}' deleted successfully"
+    except PermissionError:
+        return f"Error: Permission denied deleting '{file_path}'"
+    except Exception as e:
+        return f"Error deleting file: {str(e)}"
 
 
 if __name__ == "__main__":
