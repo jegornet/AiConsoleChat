@@ -24,6 +24,7 @@ class MCPClient:
         self.exit_stack = AsyncExitStack()
         self.anthropic = Anthropic()
         self.max_tokens = MAX_TOKENS  # Current max tokens setting
+        self.is_multiline = IS_MULTILINE  # Multiline mode flag
 
     def load_mcp_config(self, config_path: str = "mcp.json") -> dict:
         """Load MCP configuration from JSON file"""
@@ -167,13 +168,14 @@ class MCPClient:
         print("Это чат с ИИ. Команды:")
         print("/quit, /q – выход")
         print(f"/max_tokens [число] – изменить количество токенов (текущее: {self.max_tokens})")
+        print("/multiline [on/off] – переключить режим многолинейного ввода")
 
         line_buffer = []
 
         while True:
             try:
                 # Show appropriate prompt based on buffer state
-                if IS_MULTILINE and line_buffer:
+                if self.is_multiline and line_buffer:
                     prompt = "  "
                 else:
                     prompt = "\n> "
@@ -201,7 +203,17 @@ class MCPClient:
                         print(f"Текущее количество токенов: {self.max_tokens}")
                     continue
 
-                if not IS_MULTILINE:
+                # Check for multiline command
+                if line.lower().startswith('/multiline'):
+                    parts = line.split()
+                    if len(parts) == 2 and parts[1].lower() in ['on', 'off']:
+                        self.is_multiline = (parts[1].lower() == 'on')
+                        print(f"Многолинейный режим {'включен' if self.is_multiline else 'выключен'}")
+                    else:
+                        print(f"Текущий режим: {'многолинейный' if self.is_multiline else 'однолинейный'}")
+                    continue
+
+                if not self.is_multiline:
                     response = await self.process_query(line)
                     print("\n" + response)
 
@@ -214,7 +226,7 @@ class MCPClient:
                     print("\n" + response)
                 
                 # If line is not empty, add to buffer
-                elif line:
+                elif line and self.is_multiline:
                     line_buffer.append(line)
 
             except Exception as e:
