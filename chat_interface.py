@@ -1,6 +1,7 @@
 from typing import List
 
 from config import MAX_TOKENS, IS_MULTILINE
+from slash_commands import SlashCommandHandler
 
 
 class ChatInterface:
@@ -9,66 +10,7 @@ class ChatInterface:
     def __init__(self, max_tokens: int = MAX_TOKENS, is_multiline: bool = IS_MULTILINE):
         self.max_tokens = max_tokens
         self.is_multiline = is_multiline
-    
-    def show_help(self) -> None:
-        """Display help information"""
-        print("Это чат с ИИ. Команды:")
-        print("/quit, /q – выход")
-        print(f"/max_tokens [число] – изменить количество токенов (текущее: {self.max_tokens})")
-        print("/multiline [on/off] – переключить режим многолинейного ввода")
-    
-    def handle_max_tokens_command(self, line: str) -> bool:
-        """Handle max_tokens command
-        
-        Args:
-            line: Input line containing the command
-            
-        Returns:
-            True if command was handled, False otherwise
-        """
-        if not line.lower().startswith('/max_tokens'):
-            return False
-        
-        parts = line.split()
-        if len(parts) == 2:
-            try:
-                new_tokens = int(parts[1])
-                if new_tokens > 0:
-                    self.max_tokens = new_tokens
-                    print(f"Количество токенов изменено на {self.max_tokens}")
-                else:
-                    print("Количество токенов должно быть больше 0")
-            except ValueError:
-                print("Неверный формат числа")
-        else:
-            print(f"Текущее количество токенов: {self.max_tokens}")
-        
-        return True
-    
-    def handle_multiline_command(self, line: str) -> bool:
-        """Handle multiline command
-        
-        Args:
-            line: Input line containing the command
-            
-        Returns:
-            True if command was handled, False otherwise
-        """
-        if not line.lower().startswith('/multiline'):
-            return False
-        
-        parts = line.split()
-        if len(parts) == 2 and parts[1].lower() in ['on', 'off']:
-            self.is_multiline = (parts[1].lower() == 'on')
-            print(f"Многолинейный режим {'включен' if self.is_multiline else 'выключен'}")
-        else:
-            print(f"Текущий режим: {'многолинейный' if self.is_multiline else 'однолинейный'}")
-        
-        return True
-    
-    def is_quit_command(self, line: str) -> bool:
-        """Check if line is a quit command"""
-        return line.lower() in ['/quit', '/q']
+        self.command_handler = SlashCommandHandler(max_tokens, is_multiline)
     
     def get_prompt(self, has_buffer: bool = False) -> str:
         """Get input prompt based on current state"""
@@ -84,7 +26,7 @@ class ChatInterface:
             claude_chat: ClaudeChat instance
             mcp_client: MCPConnection instance
         """
-        self.show_help()
+        self.command_handler.show_help()
         line_buffer = []
 
         while True:
@@ -92,14 +34,15 @@ class ChatInterface:
                 prompt = self.get_prompt(bool(line_buffer))
                 line = input(prompt)
 
-                if self.is_quit_command(line):
+                command_result = self.command_handler.handle_command(line)
+                if command_result == 'quit':
                     break
-                
-                if self.handle_max_tokens_command(line):
-                    claude_chat.set_max_tokens(self.max_tokens)
-                    continue
-                
-                if self.handle_multiline_command(line):
+                elif command_result == 'handled':
+                    if line.lower().startswith('/max_tokens'):
+                        claude_chat.set_max_tokens(self.command_handler.max_tokens)
+                        self.max_tokens = self.command_handler.max_tokens
+                    elif line.lower().startswith('/multiline'):
+                        self.is_multiline = self.command_handler.is_multiline
                     continue
 
                 if not self.is_multiline:
