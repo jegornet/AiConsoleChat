@@ -17,6 +17,8 @@ class ClaudeChat:
             raise ValueError("ANTHROPIC_API_KEY не найден в .env файле")
         self.anthropic = Anthropic(api_key=api_key)
         self.max_tokens = max_tokens
+        self.session_input_tokens = 0
+        self.session_output_tokens = 0
     
     def set_max_tokens(self, max_tokens: int) -> None:
         """Set the maximum number of tokens for responses"""
@@ -25,8 +27,21 @@ class ClaudeChat:
         else:
             raise ValueError("Max tokens must be greater than 0")
     
+    def get_session_token_usage(self) -> Dict[str, int]:
+        """Get current session token usage"""
+        return {
+            "input_tokens": self.session_input_tokens,
+            "output_tokens": self.session_output_tokens,
+            "total_tokens": self.session_input_tokens + self.session_output_tokens
+        }
+    
+    def reset_session_token_usage(self) -> None:
+        """Reset session token counters"""
+        self.session_input_tokens = 0
+        self.session_output_tokens = 0
+    
     async def process_query(self, query: str, available_tools: List[Dict[str, Any]], 
-                          mcp_client) -> str:
+                          mcp_client) -> tuple[str, Dict[str, int]]:
         """Process a query using Claude and available tools
         
         Args:
@@ -35,12 +50,14 @@ class ClaudeChat:
             mcp_client: MCP client instance for tool calls
             
         Returns:
-            Final response text
+            Tuple of (final response text, token usage for this request)
         """
         messages = [{"role": "user", "content": query}]
         final_text = []
         max_iterations = 10
         iteration = 0
+        request_input_tokens = 0
+        request_output_tokens = 0
 
         while iteration < max_iterations:
             iteration += 1
@@ -52,6 +69,13 @@ class ClaudeChat:
                 messages=messages,
                 tools=available_tools
             )
+            
+            # Track token usage
+            if hasattr(response, 'usage'):
+                request_input_tokens += response.usage.input_tokens
+                request_output_tokens += response.usage.output_tokens
+                self.session_input_tokens += response.usage.input_tokens
+                self.session_output_tokens += response.usage.output_tokens
 
             assistant_content = []
             tool_uses = []
@@ -107,4 +131,10 @@ class ClaudeChat:
         if iteration >= max_iterations:
             final_text.append(f"[Warning: Reached maximum iterations ({max_iterations})]")
 
-        return "\n".join(final_text)
+        request_usage = {
+            "input_tokens": request_input_tokens,
+            "output_tokens": request_output_tokens,
+            "total_tokens": request_input_tokens + request_output_tokens
+        }
+
+        return "\n".join(final_text), request_usage

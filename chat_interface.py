@@ -47,16 +47,22 @@ class ChatInterface:
 
                 if not self.is_multiline:
                     available_tools = await mcp_client.get_available_tools()
-                    response = await claude_chat.process_query(line, available_tools, mcp_client)
+                    response, token_usage = await claude_chat.process_query(line, available_tools, mcp_client)
                     print("\n" + response)
+                    session_usage = claude_chat.get_session_token_usage()
+                    print(f"\n[Токены за запрос: {token_usage['input_tokens']} вход + {token_usage['output_tokens']} выход = {token_usage['total_tokens']} всего]")
+                    print(f"[Токены за сессию: {session_usage['input_tokens']} вход + {session_usage['output_tokens']} выход = {session_usage['total_tokens']} всего]")
                 else:
                     if not line and line_buffer:
                         query = "\n".join(line_buffer)
                         line_buffer.clear()
                         
                         available_tools = await mcp_client.get_available_tools()
-                        response = await claude_chat.process_query(query, available_tools, mcp_client)
+                        response, token_usage = await claude_chat.process_query(query, available_tools, mcp_client)
                         print("\n" + response)
+                        session_usage = claude_chat.get_session_token_usage()
+                        print(f"\n[Токены за запрос: {token_usage['input_tokens']} вход + {token_usage['output_tokens']} выход = {token_usage['total_tokens']} всего]")
+                        print(f"[Токены за сессию: {session_usage['input_tokens']} вход + {session_usage['output_tokens']} выход = {session_usage['total_tokens']} всего]")
                     elif line:
                         line_buffer.append(line)
 
