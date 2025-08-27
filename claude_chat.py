@@ -1,14 +1,21 @@
+import os
 from typing import List, Dict, Any, Optional
 from anthropic import Anthropic
+from dotenv import load_dotenv
 
 from config import MODEL, SYSTEM_PROMPT
+
+load_dotenv()
 
 
 class ClaudeChat:
     """Handles interaction with Anthropic's Claude API"""
     
     def __init__(self, max_tokens: int = 8192):
-        self.anthropic = Anthropic()
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY не найден в .env файле")
+        self.anthropic = Anthropic(api_key=api_key)
         self.max_tokens = max_tokens
     
     def set_max_tokens(self, max_tokens: int) -> None:
